@@ -144,6 +144,9 @@ function ChatPage() {
 
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  // Prevents the messages-fetch effect from clearing optimistic state
+  // when we programmatically create a session inside sendMessage
+  const justCreatedSession = useRef(false);
 
   // ── Auto-scroll ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -176,6 +179,12 @@ function ChatPage() {
   // ── Load messages when active session changes ────────────────────────────
   useEffect(() => {
     if (!activeSessionId) return;
+    // Skip refetch when we just created the session from within sendMessage
+    // (optimistic messages are already in state and streaming is about to start)
+    if (justCreatedSession.current) {
+      justCreatedSession.current = false;
+      return;
+    }
     setLoadingMessages(true);
     setMessages([]);
     fetch(`${API_BASE}/api/sessions/${activeSessionId}/messages`)
@@ -227,6 +236,8 @@ function ChatPage() {
       });
       const session = await res.json();
       sessionId = session.session_id;
+      // Flag the effect to skip the auto-fetch so our optimistic messages stay intact
+      justCreatedSession.current = true;
       setSessions((prev) => [session, ...prev]);
       setActiveSessionId(sessionId);
     }
