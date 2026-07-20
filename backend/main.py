@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import get_client, close_db
-from app.routers import health, auth, chat, sessions
+from app.routers import health, auth, chat, sessions, weather
 
 
 # ---------------------------------------------------------------------------
@@ -20,13 +20,13 @@ async def lifespan(app: FastAPI):
     # Startup: verify MongoDB connection
     try:
         await get_client().admin.command("ping")
-        print("✅  MongoDB connected")
+        print("[OK] MongoDB connected")
     except Exception as e:
-        print(f"⚠️  MongoDB connection failed: {e}")
+        print(f"[ERROR] MongoDB connection failed: {e}")
     yield
     # Shutdown
     await close_db()
-    print("🔌  MongoDB disconnected")
+    print("[INFO] MongoDB disconnected")
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +58,7 @@ app.include_router(health.router,   prefix="/api/health",    tags=["Health"])
 app.include_router(auth.router,     prefix="/api/auth",      tags=["Auth"])
 app.include_router(chat.router,     prefix="/api/chat",      tags=["Chat"])
 app.include_router(sessions.router, prefix="/api/sessions",  tags=["Sessions"])
+app.include_router(weather.router,  prefix="/api/weather",   tags=["Weather"])
 
 
 @app.get("/", tags=["Root"])

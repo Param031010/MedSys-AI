@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Home, MessageCircle, MapPin, User, Stethoscope, LogOut } from "lucide-react";
 import { useClerk, useUser } from "@clerk/clerk-react";
 import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
 
 const nav = [
   { to: "/", label: "Home", icon: Home },
@@ -15,10 +16,37 @@ export function AppSidebar() {
   const { signOut } = useClerk();
   const { user } = useUser();
 
-  const initials = user
-    ? (user.firstName?.[0] ?? "") + (user.lastName?.[0] ?? "")
+  const [profilePic, setProfilePic] = useState(() => localStorage.getItem("medsys_profilePic") || "");
+  const [displayName, setDisplayName] = useState(() => localStorage.getItem("medsys_fullName") || "");
+
+  useEffect(() => {
+    if (user) {
+      if (!localStorage.getItem("medsys_profilePic")) {
+        setProfilePic(user.imageUrl || "");
+      } else {
+        setProfilePic(localStorage.getItem("medsys_profilePic") || "");
+      }
+      if (!localStorage.getItem("medsys_fullName")) {
+        setDisplayName(user.fullName || user.username || "User");
+      } else {
+        setDisplayName(localStorage.getItem("medsys_fullName") || "");
+      }
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setProfilePic(localStorage.getItem("medsys_profilePic") || user?.imageUrl || "");
+      setDisplayName(localStorage.getItem("medsys_fullName") || user?.fullName || user?.username || "User");
+    };
+
+    window.addEventListener("medsys_profile_updated", handleUpdate);
+    return () => window.removeEventListener("medsys_profile_updated", handleUpdate);
+  }, [user]);
+
+  const initials = displayName
+    ? displayName.split(" ").map(n => n[0]).join("").slice(0, 2)
     : "?";
-  const displayName = user?.fullName ?? user?.username ?? "User";
   const email = user?.primaryEmailAddress?.emailAddress ?? "";
 
   return (
@@ -65,9 +93,9 @@ export function AppSidebar() {
 
       <div className="border-t border-border p-4">
         <div className="flex items-center gap-3 min-w-0">
-          {user?.imageUrl ? (
+          {profilePic ? (
             <img
-              src={user.imageUrl}
+              src={profilePic}
               alt={displayName}
               className="h-9 w-9 rounded-full object-cover shrink-0"
             />

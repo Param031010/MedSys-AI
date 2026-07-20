@@ -18,7 +18,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
-MODEL = "openai/gpt-oss-120b"
+MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = (
     "You are MedAssist, an AI medical assistant in MedsysAI. "
@@ -88,10 +88,9 @@ async def chat_message(body: ChatRequest):
             stream = await client.chat.completions.create(
                 model=MODEL,
                 messages=groq_messages,
-                temperature=1,
-                max_completion_tokens=MAX_TOKENS,
+                temperature=0.7,
+                max_tokens=MAX_TOKENS,
                 top_p=1,
-                reasoning_effort="medium",
                 stream=True,
                 stop=None,
             )

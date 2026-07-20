@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from '@tanstack/react-router'
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,46 +8,183 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Pill, Phone, User as UserIcon } from "lucide-react";
 import { AuthGuard } from "@/components/auth-guard";
+import { useUser } from "@clerk/clerk-react";
+import { useState, useEffect, useRef } from "react";
+
 export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
-      { title: "Profile \u2014 MedsysAI" },
+      { title: "Profile — MedsysAI" },
       { name: "description", content: "Your personal details, medical history, current medications and emergency contacts." }
     ]
   }),
   component: () => <AuthGuard><ProfilePage /></AuthGuard>
 });
-const STATS = [
-  { label: "Age", value: "32", unit: "yrs" },
-  { label: "Weight", value: "72", unit: "kg" },
-  { label: "Height", value: "178", unit: "cm" },
-  { label: "Blood group", value: "O+", unit: "" },
-  { label: "BMI", value: "22.7", unit: "" }
-];
 const TIMELINE = [
   { year: "2024", title: "Hypertension diagnosis", note: "Started on Amlodipine 5mg", severity: "monitor" },
   { year: "2022", title: "Seasonal allergic rhinitis", note: "Recurring, spring months", severity: "stable" },
-  { year: "2019", title: "Appendectomy", note: "Laparoscopic procedure \u2014 full recovery", severity: "stable" },
-  { year: "2015", title: "Mild concussion", note: "Cycling accident \u2014 no long-term effects", severity: "stable" }
+  { year: "2019", title: "Appendectomy", note: "Laparoscopic procedure — full recovery", severity: "stable" },
+  { year: "2015", title: "Mild concussion", note: "Cycling accident — no long-term effects", severity: "stable" }
 ];
 const MEDS = [
   { name: "Amlodipine", dose: "5 mg", freq: "Once daily, morning", since: "Jan 2024" },
   { name: "Vitamin D3", dose: "60,000 IU", freq: "Weekly", since: "Aug 2024" },
   { name: "Cetirizine", dose: "10 mg", freq: "As needed", since: "2022" }
 ];
+function getPatientId(userId) {
+  if (!userId) return "MS-208441";
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idNum = Math.abs(hash) % 900000 + 100000;
+  return `MS-${idNum}`;
+}
 function ProfilePage() {
+  const { user } = useUser();
+  const fileInputRef = useRef(null);
+
+  const defaultFullName = user?.fullName || user?.username || "Aarav Rao";
+  const defaultEmail = user?.primaryEmailAddress?.emailAddress || "aarav.rao@example.com";
+
+  // Form states
+  const [fullName, setFullName] = useState(() => localStorage.getItem("medsys_fullName") || "");
+  const [dob, setDob] = useState(() => localStorage.getItem("medsys_dob") || "12 March 1993");
+  const [email, setEmail] = useState(() => localStorage.getItem("medsys_email") || "");
+  const [phone, setPhone] = useState(() => localStorage.getItem("medsys_phone") || "+91 98765 43210");
+  const [address, setAddress] = useState(() => localStorage.getItem("medsys_address") || "Indiranagar, Bengaluru");
+  const [lang, setLang] = useState(() => localStorage.getItem("medsys_lang") || "English");
+
+  // Stat states
+  const [age, setAge] = useState(() => localStorage.getItem("medsys_age") || "32");
+  const [weight, setWeight] = useState(() => localStorage.getItem("medsys_weight") || "72");
+  const [height, setHeight] = useState(() => localStorage.getItem("medsys_height") || "178");
+  const [bloodGroup, setBloodGroup] = useState(() => localStorage.getItem("medsys_bloodGroup") || "O+");
+  const [bmi, setBmi] = useState(() => localStorage.getItem("medsys_bmi") || "22.7");
+
+  // Profile pic state
+  const [profilePic, setProfilePic] = useState(() => localStorage.getItem("medsys_profilePic") || "");
+
+  // Sync defaults
+  useEffect(() => {
+    if (user) {
+      if (!localStorage.getItem("medsys_fullName")) {
+        setFullName(user.fullName || user.username || "Aarav Rao");
+      }
+      if (!localStorage.getItem("medsys_email")) {
+        setEmail(user.primaryEmailAddress?.emailAddress || "aarav.rao@example.com");
+      }
+      if (!localStorage.getItem("medsys_profilePic")) {
+        setProfilePic(user.imageUrl || "");
+      }
+    }
+  }, [user]);
+
+  // Sync listener
+  useEffect(() => {
+    const handleUpdate = () => {
+      setFullName(localStorage.getItem("medsys_fullName") || user?.fullName || user?.username || "Aarav Rao");
+      setEmail(localStorage.getItem("medsys_email") || user?.primaryEmailAddress?.emailAddress || "aarav.rao@example.com");
+      setProfilePic(localStorage.getItem("medsys_profilePic") || user?.imageUrl || "");
+    };
+    window.addEventListener("medsys_profile_updated", handleUpdate);
+    return () => window.removeEventListener("medsys_profile_updated", handleUpdate);
+  }, [user]);
+
+  const initials = fullName
+    ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2)
+    : "?";
+
+  const handleSave = () => {
+    localStorage.setItem("medsys_fullName", fullName);
+    localStorage.setItem("medsys_dob", dob);
+    localStorage.setItem("medsys_email", email);
+    localStorage.setItem("medsys_phone", phone);
+    localStorage.setItem("medsys_address", address);
+    localStorage.setItem("medsys_lang", lang);
+
+    localStorage.setItem("medsys_age", age);
+    localStorage.setItem("medsys_weight", weight);
+    localStorage.setItem("medsys_height", height);
+    localStorage.setItem("medsys_bloodGroup", bloodGroup);
+    localStorage.setItem("medsys_bmi", bmi);
+
+    window.dispatchEvent(new Event("medsys_profile_updated"));
+    alert("Profile saved successfully!");
+  };
+
+  const handleCancel = () => {
+    setFullName(localStorage.getItem("medsys_fullName") || defaultFullName);
+    setDob(localStorage.getItem("medsys_dob") || "12 March 1993");
+    setEmail(localStorage.getItem("medsys_email") || defaultEmail);
+    setPhone(localStorage.getItem("medsys_phone") || "+91 98765 43210");
+    setAddress(localStorage.getItem("medsys_address") || "Indiranagar, Bengaluru");
+    setLang(localStorage.getItem("medsys_lang") || "English");
+
+    setAge(localStorage.getItem("medsys_age") || "32");
+    setWeight(localStorage.getItem("medsys_weight") || "72");
+    setHeight(localStorage.getItem("medsys_height") || "178");
+    setBloodGroup(localStorage.getItem("medsys_bloodGroup") || "O+");
+    setBmi(localStorage.getItem("medsys_bmi") || "22.7");
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result;
+        setProfilePic(base64String);
+        localStorage.setItem("medsys_profilePic", base64String);
+        window.dispatchEvent(new Event("medsys_profile_updated"));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return <AppShell>
       <Card className="p-8 mb-6 shadow-[var(--shadow-soft)]">
         <div className="flex items-start gap-6">
-          <div className="h-20 w-20 rounded-2xl bg-primary/15 text-primary grid place-items-center text-2xl font-medium shrink-0">
-            AR
+          <div 
+            onClick={handleAvatarClick}
+            className="relative group cursor-pointer h-20 w-20 rounded-2xl bg-primary/15 text-primary grid place-items-center text-2xl font-medium shrink-0 overflow-hidden"
+          >
+            {profilePic ? (
+              <img
+                src={profilePic}
+                alt={fullName}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="uppercase">{initials}</div>
+            )}
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[11px] font-medium">
+              Upload
+            </div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              className="hidden"
+            />
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-light text-foreground">Aarav Rao</h1>
-            <p className="text-sm text-muted-foreground mt-1">Patient ID · MS-208441</p>
+            <h1 className="text-2xl font-light text-foreground">{fullName || defaultFullName}</h1>
+            <p className="text-sm text-muted-foreground mt-1">Patient ID · {getPatientId(user?.id)}</p>
 
             <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              {STATS.map((s) => <div
+              {[
+                { label: "Age", value: age, unit: "yrs" },
+                { label: "Weight", value: weight, unit: "kg" },
+                { label: "Height", value: height, unit: "cm" },
+                { label: "Blood group", value: bloodGroup, unit: "" },
+                { label: "BMI", value: bmi, unit: "" }
+              ].map((s) => <div
     key={s.label}
     className="rounded-lg border border-border bg-background px-3 py-2.5"
   >
@@ -82,22 +219,69 @@ function ProfilePage() {
 
         <TabsContent value="personal" className="mt-6">
           <Card className="p-6 shadow-[var(--shadow-soft)]">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-2xl">
-              {[
-    { l: "Full name", v: "Aarav Rao" },
-    { l: "Date of birth", v: "12 March 1993" },
-    { l: "Email", v: "aarav.rao@example.com" },
-    { l: "Phone", v: "+91 98765 43210" },
-    { l: "Address", v: "Indiranagar, Bengaluru" },
-    { l: "Preferred language", v: "English" }
-  ].map((f) => <div key={f.l} className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">{f.l}</Label>
-                  <Input defaultValue={f.v} className="h-10" />
-                </div>)}
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-4 font-normal">Personal Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-2xl">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Full name</Label>
+                    <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Date of birth</Label>
+                    <Input value={dob} onChange={(e) => setDob(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Email</Label>
+                    <Input value={email} onChange={(e) => setEmail(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Phone</Label>
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Address</Label>
+                    <Input value={address} onChange={(e) => setAddress(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Preferred language</Label>
+                    <Input value={lang} onChange={(e) => setLang(e.target.value)} className="h-10" />
+                  </div>
+                </div>
+              </div>
+
+              <hr className="border-border" />
+
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-4 font-normal">Vitals & Health Metrics</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5 max-w-2xl">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Age (years)</Label>
+                    <Input value={age} onChange={(e) => setAge(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Weight (kg)</Label>
+                    <Input value={weight} onChange={(e) => setWeight(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Height (cm)</Label>
+                    <Input value={height} onChange={(e) => setHeight(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">Blood group</Label>
+                    <Input value={bloodGroup} onChange={(e) => setBloodGroup(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">BMI</Label>
+                    <Input value={bmi} onChange={(e) => setBmi(e.target.value)} className="h-10" />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="mt-6 flex gap-3">
-              <Button>Save changes</Button>
-              <Button variant="outline">Cancel</Button>
+
+            <div className="mt-8 flex gap-3">
+              <Button onClick={handleSave}>Save changes</Button>
+              <Button variant="outline" onClick={handleCancel}>Cancel</Button>
             </div>
           </Card>
         </TabsContent>
