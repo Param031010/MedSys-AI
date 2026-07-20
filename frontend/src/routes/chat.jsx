@@ -187,7 +187,7 @@ function ChatPage() {
     }
     setLoadingMessages(true);
     setMessages([]);
-    fetch(`${API_BASE}/api/sessions/${activeSessionId}/messages`)
+    fetch(`${API_BASE}/api/sessions/${activeSessionId}/messages?user_id=${user.id}`)
       .then((r) => r.json())
       .then((data) => setMessages(data))
       .catch(() => {})
@@ -212,7 +212,7 @@ function ChatPage() {
   // ── Delete session ───────────────────────────────────────────────────────
   async function deleteSession(e, sessionId) {
     e.stopPropagation();
-    await fetch(`${API_BASE}/api/sessions/${sessionId}`, { method: "DELETE" });
+    await fetch(`${API_BASE}/api/sessions/${sessionId}?user_id=${user.id}`, { method: "DELETE" });
     setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
     if (activeSessionId === sessionId) {
       const remaining = sessions.filter((s) => s.session_id !== sessionId);
@@ -257,8 +257,7 @@ function ChatPage() {
           session_id: sessionId,
           user_id: user.id,
           content: text,
-          // send previous messages as history (exclude the optimistic ones we just added)
-          history: messages.map((m) => ({ role: m.role, content: m.content })),
+          // history is now loaded server-side from MongoDB
         }),
       });
 

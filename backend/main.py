@@ -7,8 +7,8 @@ load_dotenv()  # load .env before any module reads env vars
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db import get_client, close_db
-from app.routers import health, auth, chat, sessions, weather
+from app.db import get_client, close_db, ensure_indexes
+from app.routers import health, auth, chat, sessions, weather, profile
 
 
 # ---------------------------------------------------------------------------
@@ -17,10 +17,11 @@ from app.routers import health, auth, chat, sessions, weather
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: verify MongoDB connection
+    # Startup: verify MongoDB connection then ensure indexes
     try:
         await get_client().admin.command("ping")
         print("[OK] MongoDB connected")
+        await ensure_indexes()
     except Exception as e:
         print(f"[ERROR] MongoDB connection failed: {e}")
     yield
@@ -59,6 +60,7 @@ app.include_router(auth.router,     prefix="/api/auth",      tags=["Auth"])
 app.include_router(chat.router,     prefix="/api/chat",      tags=["Chat"])
 app.include_router(sessions.router, prefix="/api/sessions",  tags=["Sessions"])
 app.include_router(weather.router,  prefix="/api/weather",   tags=["Weather"])
+app.include_router(profile.router,  prefix="/api/profile",   tags=["Profile"])
 
 
 @app.get("/", tags=["Root"])

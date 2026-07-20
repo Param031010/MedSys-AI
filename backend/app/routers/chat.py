@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from groq import AsyncGroq
 from pydantic import BaseModel
@@ -27,27 +27,21 @@ SYSTEM_PROMPT = (
 )
 
 MAX_TOKENS = 1024
-MAX_HISTORY = 6   # keep well under the 8 000 TPM free-tier cap
+MAX_HISTORY = 10  # number of past messages to load from DB as LLM context
 
 
 # ---------------------------------------------------------------------------
 # Request model
 # ---------------------------------------------------------------------------
 
-class ChatMessage(BaseModel):
-    role: str      # "user" | "assistant"
-    content: str
-
-
 class ChatRequest(BaseModel):
     session_id: str
-    user_id: str
-    content: str                      # the new user message
-    history: list[ChatMessage] = []   # previous messages (for context)
+    user_id: str   # Clerk user ID — used to verify session ownership
+    content: str   # the new user message
 
 
 # ---------------------------------------------------------------------------
-# Streaming endpoint — persists both user + assistant messages to MongoDB
+# Streaming endpoint — loads history from MongoDB, persists both turns
 # ---------------------------------------------------------------------------
 
 @router.post("/message", summary="Stream a Groq reply and persist to MongoDB")
@@ -55,7 +49,14 @@ async def chat_message(body: ChatRequest):
     db = get_db()
     now = datetime.now(timezone.utc)
 
-    # 1️⃣  Persist the user message immediately
+    # 1️⃣  Verify the session belongs to this Clerk user
+    session = await db.sessions.find_one({"session_id": body.session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("user_id") != body.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 2️⃣  Persist the user message immediately
     await db.messages.insert_one({
         "session_id": body.session_id,
         "role": "user",
@@ -63,9 +64,8 @@ async def chat_message(body: ChatRequest):
         "created_at": now,
     })
 
-    # 2️⃣  Update session: set title on first message, always bump updated_at
-    session = await db.sessions.find_one({"session_id": body.session_id})
-    is_first = session and not session.get("titled", False)
+    # 3️⃣  Update session: set title on first message, always bump updated_at
+    is_first = not session.get("titled", False)
     update: dict = {"updated_at": now}
     if is_first:
         update["title"] = body.content[:60]
@@ -75,13 +75,24 @@ async def chat_message(body: ChatRequest):
         {"$set": update},
     )
 
-    # 3️⃣  Build context for Groq (system + last N turns + new user message)
-    recent = body.history[-(MAX_HISTORY - 1):]   # leave room for new msg
-    groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    groq_messages += [{"role": m.role, "content": m.content} for m in recent]
-    groq_messages.append({"role": "user", "content": body.content})
+    # 4️⃣  Load history from MongoDB (server-side, scoped to this session)
+    #     We fetch MAX_HISTORY messages *before* the one we just inserted,
+    #     so we sort descending and reverse for chronological order.
+    history_cursor = db.messages.find(
+        {"session_id": body.session_id, "role": {"$in": ["user", "assistant"]}},
+        sort=[("created_at", -1)],
+    ).limit(MAX_HISTORY + 1)  # +1 to include the message we just inserted
+    history_docs = await history_cursor.to_list(length=MAX_HISTORY + 1)
+    history_docs.reverse()  # chronological order
 
-    # 4️⃣  Stream and persist the assistant reply
+    # 5️⃣  Build context for Groq
+    groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for doc in history_docs:
+        # Skip if role is unknown
+        if doc["role"] in ("user", "assistant"):
+            groq_messages.append({"role": doc["role"], "content": doc["content"]})
+
+    # 6️⃣  Stream and persist the assistant reply
     async def event_stream():
         collected: list[str] = []
         try:

@@ -18,6 +18,7 @@ API key: set OPENWEATHER_API_KEY in backend/.env
 import asyncio
 import json
 import os
+import re
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -228,8 +229,8 @@ async def get_health_tips(
                 },
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.7,
-            max_tokens=400,
+            temperature=0.35,  # lower = more deterministic, less verbose output
+            max_tokens=700,    # 400 was too low — tips were being truncated mid-sentence
             stream=False,
             # No response_format — parse JSON ourselves to avoid model compatibility issues
         )
@@ -242,6 +243,13 @@ async def get_health_tips(
             if raw.startswith("json"):
                 raw = raw[4:]
             raw = raw.split("```")[0].strip()  # drop closing fence
+
+        # Fallback: extract the first {...} JSON object via regex in case the model
+        # adds preamble/postamble text despite being told not to
+        if not raw.startswith("{"):
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if m:
+                raw = m.group(0)
 
         data = json.loads(raw)
 

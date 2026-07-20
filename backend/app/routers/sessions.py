@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.db import get_db
@@ -30,6 +30,19 @@ def _group_label(dt: datetime) -> str:
     return "Older"
 
 
+async def _require_session_owner(session_id: str, user_id: str) -> dict:
+    """Fetch a session and verify it belongs to the requesting user.
+    Raises 404 if not found, 403 if the owner does not match.
+    """
+    db = get_db()
+    session = await db.sessions.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return session
+
+
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -44,7 +57,7 @@ class CreateSessionRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/", summary="List sessions for a user")
-async def list_sessions(user_id: str):
+async def list_sessions(user_id: str = Query(...)):
     """Returns all sessions for a user, ordered by most-recent first."""
     db = get_db()
     cursor = db.sessions.find(
@@ -71,7 +84,11 @@ async def create_session(body: CreateSessionRequest):
 
 
 @router.get("/{session_id}/messages", summary="Get messages for a session")
-async def get_messages(session_id: str):
+async def get_messages(session_id: str, user_id: str = Query(...)):
+    """Returns all messages for a session.
+    Requires user_id to verify ownership before returning any data.
+    """
+    await _require_session_owner(session_id, user_id)
     db = get_db()
     cursor = db.messages.find(
         {"session_id": session_id},
@@ -82,7 +99,11 @@ async def get_messages(session_id: str):
 
 
 @router.delete("/{session_id}", summary="Delete a session and all its messages")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, user_id: str = Query(...)):
+    """Deletes a session and all its messages.
+    Requires user_id to verify ownership before deleting.
+    """
+    await _require_session_owner(session_id, user_id)
     db = get_db()
     await db.sessions.delete_one({"session_id": session_id})
     await db.messages.delete_many({"session_id": session_id})
